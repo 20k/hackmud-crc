@@ -3,39 +3,72 @@
 #include <z3.h>
 #include <assert.h>
 #include <vector>
+#include <string.h>
 
 #define POLY UINT64_C(0x42f0e1eba9ea3693)
 #define TOP UINT64_C(0x8000000000000000)
 
 z3::expr long_and(z3::expr ex, uint64_t in)
 {
-    z3::expr cpc = ex.ctx().bv_val((unsigned long long)in, 64);
+    z3::expr cpc = ex.ctx().bv_val((unsigned long long)in, ex.get_sort().bv_size());
 
     return ex & cpc;
 }
 
 z3::expr unsigned_gt(z3::expr ex, uint64_t in)
 {
-    z3::expr cpc = ex.ctx().bv_val((unsigned long long)in, 64);
+    z3::expr cpc = ex.ctx().bv_val((unsigned long long)in, ex.get_sort().bv_size());
 
     return z3::to_expr(ex.ctx(), Z3_mk_bvugt(ex.ctx(), ex, cpc));
+}
+
+z3::expr unsigned_gte(z3::expr ex, uint64_t in)
+{
+    z3::expr cpc = ex.ctx().bv_val((unsigned long long)in, ex.get_sort().bv_size());
+
+    return z3::to_expr(ex.ctx(), Z3_mk_bvuge(ex.ctx(), ex, cpc));
+}
+
+z3::expr unsigned_lt(z3::expr ex, uint64_t in)
+{
+    z3::expr cpc = ex.ctx().bv_val((unsigned long long)in, ex.get_sort().bv_size());
+
+    return z3::to_expr(ex.ctx(), Z3_mk_bvult(ex.ctx(), ex, cpc));
+}
+
+z3::expr unsigned_lte(z3::expr ex, uint64_t in)
+{
+    z3::expr cpc = ex.ctx().bv_val((unsigned long long)in, ex.get_sort().bv_size());
+
+    return z3::to_expr(ex.ctx(), Z3_mk_bvule(ex.ctx(), ex, cpc));
 }
 
 uint64_t get_z3_interp(z3::solver& s, const std::string& n1)
 {
     z3::model m = s.get_model();
 
-    z3::func_decl d0 = m.get_const_decl(0);
+    int num_consts = m.num_consts();
 
-    assert(d0.name().str() == n1);
+    for(int i=0; i < num_consts; i++)
+    {
+        z3::func_decl d0 = m.get_const_decl(i);
 
-    z3::expr e0 = m.get_const_interp(d0);
+        //assert(d0.name().str() == n1);
 
-    uint64_t s0 = -1;
+        if(d0.name().str() != n1)
+            continue;
 
-    Z3_get_numeral_uint64(s.ctx(), e0, &s0);
+        z3::expr e0 = m.get_const_interp(d0);
 
-    return s0;
+        uint64_t s0 = -1;
+
+        Z3_get_numeral_uint64(s.ctx(), e0, &s0);
+
+        return s0;
+    }
+
+    assert(false);
+    return -1;
 }
 
 uint64_t get_z3_interp(z3::expr e)
@@ -81,7 +114,7 @@ uint64_t crc64_ecma182_orig(uint64_t crc,  const char *buf, size_t len)
     while (len--) {
         uint64_t shifted_up = ((uint64_t)*buf) << 56;
 
-        std::cout << "VUP " << std::hex << shifted_up << std::endl;
+        //std::cout << "VUP " << std::hex << shifted_up << std::endl;
 
         //uint64_t what = ((uint64_t)(*buf)) << 56;
 
@@ -91,7 +124,7 @@ uint64_t crc64_ecma182_orig(uint64_t crc,  const char *buf, size_t len)
 
         crc ^= shifted_up;
 
-        std::cout << "FCRC " << std::hex << crc << std::endl;
+        //std::cout << "FCRC " << std::hex << crc << std::endl;
 
         crc = crc & TOP ? (crc << 1) ^ POLY : crc << 1;
         crc = crc & TOP ? (crc << 1) ^ POLY : crc << 1;
@@ -135,6 +168,16 @@ z3::expr z3_crc_impl(z3::context& ctx, const std::vector<z3::expr>& in)
     return crc;
 }
 
+z3::expr is_eq(z3::expr one, z3::expr two)
+{
+    return z3::expr(one.ctx(), Z3_mk_eq(one.ctx(), one, two));
+}
+
+z3::expr is_eq(z3::expr one, bool two)
+{
+    return is_eq(one, one.ctx().bv_val((uint64_t)two, 64));
+}
+
 void z3_crc(const std::string& str)
 {
     z3::context ctx;
@@ -163,7 +206,7 @@ void z3_crc(const std::string& str)
     z3::expr fin = ctx.bv_val(UINT64_C(0x824f3151871f12a7), 64);
 
     solve.add(dummy == res);
-    //solve.add(dummy == fin);
+    solve.add(dummy == fin);
 
     solve.check();
 
@@ -184,6 +227,121 @@ void z3_crc(const std::string& str)
 
         std::cout << get_z3_interp(next) << std::endl;
     }*/
+}
+
+void z3_crc_reverse(uint64_t cst)
+{
+    //int len = 7;
+
+    for(int len=2; len < 20; len++)
+    {
+        z3::context ctx;
+        z3::solver solve(ctx);
+
+        std::vector<z3::expr> zexpr;
+        std::vector<z3::expr> excluded;
+
+        for(int i=0; i < len; i++)
+        {
+            std::string name = "c" + std::to_string(i);
+
+            z3::expr nexpr = ctx.bv_const(name.c_str(), 8);
+
+            solve.add(unsigned_gte(nexpr, 48));
+            //solve.add(unsigned_gte(nexpr, 65));
+            solve.add(unsigned_lte(nexpr, 122));
+
+            if(i < len / 2)
+            {
+                solve.add(unsigned_gte(nexpr, 95));
+            }
+
+            solve.add(nexpr != 58);
+            solve.add(nexpr != 59);
+            solve.add(nexpr != 60);
+            solve.add(nexpr != 61);
+            solve.add(nexpr != 62);
+            solve.add(nexpr != 63);
+            solve.add(nexpr != 64);
+            solve.add(nexpr != 91);
+            solve.add(nexpr != 92);
+            solve.add(nexpr != 93);
+            solve.add(nexpr != 94);
+            solve.add(nexpr != 96);
+
+            zexpr.emplace_back(nexpr);
+        }
+
+        std::string hint = "";
+
+        for(int i=0; i < (int)hint.size() && i < len; i++)
+        {
+            solve.add(zexpr[i] == ctx.bv_val((uint8_t)hint[i], 8));
+        }
+
+        std::vector<z3::expr> extended;
+
+        for(auto& i : zexpr)
+        {
+            extended.emplace_back(z3::expr(ctx, Z3_mk_zero_ext(ctx, 64-8, i)));
+        }
+
+        auto res = z3_crc_impl(ctx, extended);
+
+        z3::expr fin = ctx.bv_val(cst, 64);
+
+        solve.add(res == fin);
+
+        while(1)
+        {
+            z3::check_result is_solved = solve.check();
+
+            if(is_solved != z3::sat)
+                break;
+
+            //std::cout << solve.get_model() << std::endl;
+
+            std::vector<uint64_t> vals;
+
+            for(int i=0; i < len; i++)
+            {
+                std::string name = "c" + std::to_string(i);
+
+                uint64_t val = get_z3_interp(solve, name);
+
+                std::cout << (char)val;
+
+                vals.push_back(val);
+            }
+
+            std::cout << std::endl;
+
+
+            /*for(int i=0; i < zexpr.size(); i++)
+            {
+                solve.add(zexpr[i] != ctx.bv_val(vals[i], 64));
+            }*/
+
+            //return;
+
+            //z3::expr root_and = is_eq(zexpr[0], ctx.bv_val(vals[0], 64));
+
+            z3::expr root_and = zexpr[0] == ctx.bv_val((uint8_t)vals[0], 8);
+
+            for(int i=1; i < (int)zexpr.size(); i++)
+            {
+                root_and = (root_and && (zexpr[i] == ctx.bv_val((uint8_t)vals[i], 8)));
+                //root_and = (root_and && is_eq(zexpr[i], ctx.bv_val(vals[i], 64)));
+            }
+
+            solve.add(!root_and);
+
+            //solve.add(fin == fin);
+        }
+
+
+        //break;
+    }
 }
 
 void hackmud_crack()
@@ -213,7 +371,7 @@ std::string xor_strings(const std::string& v1, const std::string& v2)
 
     assert(v1.size() == v2.size());
 
-    for(int i=0; i < v2.size(); i++)
+    for(int i=0; i < (int)v2.size(); i++)
     {
         res[i] ^= v2[i];
     }
@@ -224,10 +382,48 @@ std::string xor_strings(const std::string& v1, const std::string& v2)
 int main()
 {
     assert(crc64_ecma182_orig(0, "che", 3) == 0x824f3151871f12a7);
+    assert(crc64_ecma182_orig(0, "TecIYjwcPUy", strlen("TecIYjwcPUy")) == 0xad8bc39b0edec636);
+    assert(crc64_ecma182_orig(0, "be7CE2QP40BH3ZHQ2kQm5W", strlen("be7CE2QP40BH3ZHQ2kQm5W")) == 0xad8bc39b0edec636 );
+    assert(crc64_ecma182_orig(0, "login_is_false_MaciekP", strlen("login_is_false_MaciekP")) == 0xad8bc39b0edec636 );
+
+    //ad8bc39b0edec636 login_is_false_MaciekP
 
 
     //auto che_orig = crc64_ecma182_orig(0, "che", 3);
     z3_crc("che");
+    //z3_crc_reverse(0xad8bc39b0edec636);
+    //z3_crc_reverse(0x6861a3661fff4586ll);
+
+    std::vector<uint64_t> arr =
+    {
+        /*0x6861a3661fff4586ll,
+        0x334c5c9bffd5886dll,
+        0xc84ebcf63df0fbe4ll,
+        0xb7a8d3dbcc26d6e9ll,
+        0x1ad76a75301c3fcbll,
+        0x2ec4a326cfeb6bebll,
+        0xc025c245bd506dfbll,
+        0xd7e35a4d9181635ell,
+        0xd4603da01cae7b13ll,
+        0xe3e559061e4ec5a6ll,
+        0xe1c22e6031df5f9bll,
+        0x6cc0334d8879887all,
+        0x506c409e34ebcbd3ll,
+        0x5cdcf1e26d5290eell,
+        0x23fd58ea7a7ba63cll,*/
+
+        0xe3e559061e4ec5a6
+
+        //0xad8bc39b0edec636
+    };
+
+    for(auto& i : arr)
+    {
+        z3_crc_reverse(i);
+        std::cout << "FROM " << std::hex << i << std::endl;
+    }
+
+    //z3_crc_reverse(0x824f3151871f12a7);
 
     /*auto Che_orig = crc64_ecma182_orig(0, "Che", 3);
 
