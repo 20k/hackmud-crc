@@ -138,6 +138,12 @@ uint64_t crc64_ecma182_orig(uint64_t crc,  const char *buf, size_t len)
     return crc;
 }
 
+uint64_t crc64_ecma182_orig(const std::string& buf)
+{
+    return crc64_ecma182_orig(0, buf.c_str(), buf.size());
+}
+
+
 z3::expr z3_crc_impl(z3::context& ctx, const std::vector<z3::expr>& in)
 {
     int len = in.size();
@@ -386,6 +392,14 @@ int main()
     assert(crc64_ecma182_orig(0, "be7CE2QP40BH3ZHQ2kQm5W", strlen("be7CE2QP40BH3ZHQ2kQm5W")) == 0xad8bc39b0edec636 );
     assert(crc64_ecma182_orig(0, "login_is_false_MaciekP", strlen("login_is_false_MaciekP")) == 0xad8bc39b0edec636 );
 
+    using namespace std::literals;
+
+    std::string hello_world = "hello_world";
+    std::string hello_ = "hello_\0\0\0\0\0"s;
+    std::string world = "world";
+
+    assert(crc64_ecma182_orig(hello_world) == (crc64_ecma182_orig(hello_) ^ crc64_ecma182_orig(world)));
+
     //ad8bc39b0edec636 login_is_false_MaciekP
 
 
@@ -417,11 +431,11 @@ int main()
         //0xad8bc39b0edec636
     };
 
-    for(auto& i : arr)
+    /*for(auto& i : arr)
     {
         z3_crc_reverse(i);
         std::cout << "FROM " << std::hex << i << std::endl;
-    }
+    }*/
 
     //z3_crc_reverse(0x824f3151871f12a7);
 
